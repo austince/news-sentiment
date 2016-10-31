@@ -6,6 +6,7 @@ cffi==1.8.3
 click==6.6
 cryptography==1.5.2
 docutils==0.12
+facebook-sdk==2.0.0
 Flask==0.11.1
 flask-mongoengine==0.8
 Flask-RESTful==0.3.5
