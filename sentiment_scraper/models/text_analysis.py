@@ -1,7 +1,7 @@
 """
 
 """
-from news_sentiment import db
+from sentiment_scraper import db
 
 
 class TextAnalysis(db.EmbeddedDocument):

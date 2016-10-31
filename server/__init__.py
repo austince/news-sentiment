@@ -1,20 +1,27 @@
-"""
+"""        # visibleTexts=visibleTextList,
+            # rawPage=articleSource
 
 """
 import json
+import os
 from flask import Flask
 from flask_restful import Api, Resource, reqparse
 from flask_restful.utils import cors
 from flask_mongoengine import MongoEngine
-from config import Config
-from news_sentiment.models.article import Article
+from sentiment_scraper.models.article import Article
+
+env = os.environ.get('NEW_SENTIMENT_ENV', 'development')
+if env == 'prod' or env == 'production':
+    from server.config import ProdConfig as Config
+else:
+    from server.config import DevConfig as Config
 
 app = Flask(__name__)
 api = Api(app)
 app.config.from_object(Config)
 db = MongoEngine(app)
-
 api.decorators = [cors.crossdomain(origin='*', headers=['Content-Type'])]
+
 
 class ArticleRes(Resource):
     """

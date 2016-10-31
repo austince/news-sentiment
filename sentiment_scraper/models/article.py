@@ -1,14 +1,20 @@
 """
 
 """
-
-from news_sentiment import db
-from facebook_stats import FacebookStats
-from text_analysis import TextAnalysis
-import unirest
+import requests
 from datetime import datetime
 from ssl import SSLError
-from urllib2 import URLError
+from urllib.error import URLError
+import boto3
+import facebook
+from sentiment_scraper import db
+from sentiment_scraper.models.facebook_stats import FacebookStats
+from sentiment_scraper.models.text_analysis import TextAnalysis
+
+ARTICLE_BUCKET_NAME = 'scraped-articles'
+ARTICLE_RAW_PREFIX = 'raw/'
+ARTICLE_TEXTS_PREFIX = 'texts/'
+TEXT_SEPARATOR = ' % '
 
 
 class ArticleQuerySet(db.QuerySet):
@@ -47,8 +53,10 @@ class Article(db.DynamicDocument):
     relatedLinks = db.ListField(db.URLField())
     relatedArticles = db.ListField(db.ReferenceField('Article', reverse_delete_rule=db.PULL), default=[])
     newsEdition = db.StringField()
-    visibleTexts = db.ListField(db.StringField())
-    rawPage = db.StringField()
+    # These have been deprecated because they bloat the database
+    # Should be moved into a static storage service (s^3???)
+    # visibleTexts = db.ListField(db.StringField())
+    # rawPage = db.StringField()
 
     textAnalysis = db.EmbeddedDocumentField(TextAnalysis, default=None)
     fbStats = db.EmbeddedDocumentListField(FacebookStats, default=[])
@@ -60,13 +68,35 @@ class Article(db.DynamicDocument):
     # def by_date(doc_cls, queryset):
     #     return queryset.order_by('-date')
 
+    def saveRawPage(self, rawPage):
+        s3 = boto3.resource('s3')
+        bucket = s3.Bucket(ARTICLE_BUCKET_NAME)
+        bucket.put_object(
+            Body=str(rawPage),
+            Key=str(ARTICLE_RAW_PREFIX + str(self.id))
+        )
+
+    def getArticleText(self):
+        s3 = boto3.resource('s3')
+        fileObj = s3.Object(ARTICLE_BUCKET_NAME, ARTICLE_TEXTS_PREFIX + str(self.id))
+        fileReq = fileObj.get()
+        return fileReq['Body'].read()
+
+    def saveArticleText(self, articleTexts):
+        s3 = boto3.resource('s3')
+        bucket = s3.Bucket(ARTICLE_BUCKET_NAME)
+        bucket.put_object(
+            Body=str(TEXT_SEPARATOR.join(articleTexts)),
+            Key=str(ARTICLE_TEXTS_PREFIX + str(self.id))
+        )
+
     @staticmethod
     def by_date():
         articles = list(Article.objects())
         articles.sort(key=lambda x: x.date)
         return articles
 
-    def analyzeSentiment(self, saveOnFinish=False):
+    def analyzeSentiment(self, text=None, saveOnFinish=False):
         """
         -- Uses https://market.mashape.com/japerk/text-processing for sentiment.
             45000 / mo --
@@ -74,52 +104,53 @@ class Article(db.DynamicDocument):
             500 / day LIMIT
         :return:
         """
-        print "Analyzing sentiment for " + self.title
-
+        print("Analyzing sentiment for " + self.title)
         # Buffer each text with a space
-        # Create a copy
-        textToProcess = list(self.visibleTexts)
-        # Add a single space to buffer each text
-        for i in range(0, len(textToProcess)):
-            textToProcess[i] += ' '
-        # Create one long string of all the visible text on the page for processing
-        textToProcess = ''.join(textToProcess)
+        if text is None:
+            # Get a copy from s3
+            text = self.getArticleText()
 
-        unirest.timeout(5)
+        # Only use the first 10,000 chars limit for now
+        # Will aggregate later
+        if len(text) > 10000:
+            text = text[:10000]
+
         try:
-            response = unirest.post(
+            response = requests.post(
                 "https://sentinelprojects-skyttle20.p.mashape.com/",
                 headers={
                     "X-Mashape-Key": "aT640lneftmshsi5erOiJq4hxgQIp1Tdrimjsn4NpRuAEJcPzy",
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Accept": "application/json"
                 },
-                params={
+                data={
                     "annotate": 1,
                     "keywords": 1,
                     "lang": "en",
                     "sentiment": 1,
-                    "text": textToProcess
-                }
+                    "text": text
+                },
+                timeout=5
             )
         except SSLError as ex:
-            print "SSLError " + ex.message
+            print(str(ex))
             # Must break out if we cannot get a response :(
             return
 
         # Break into terms and sentiment
-        if response.code == 200:
-            warnings = response.body['warnings']
+        if response.ok:
+            data = response.json()
+            warnings = data['warnings']
             # The meat of the response
-            data = response.body['docs'][0]
-            for term in data['terms']:
+            sentimentData = data['docs'][0]
+            for term in sentimentData['terms']:
                 del term['id']  # No one wants yo id CT
 
             analysis = TextAnalysis(
-                pos=float(data['sentiment_scores']['pos']),
-                neutral=float(data['sentiment_scores']['neu']),
-                neg=float(data['sentiment_scores']['neg']),
-                terms=data['terms'],
+                pos=float(sentimentData['sentiment_scores']['pos']),
+                neutral=float(sentimentData['sentiment_scores']['neu']),
+                neg=float(sentimentData['sentiment_scores']['neg']),
+                terms=sentimentData['terms'],
                 warnings=warnings
             )
             try:
@@ -130,11 +161,11 @@ class Article(db.DynamicDocument):
                 if saveOnFinish:
                     self.save()
             except db.ValidationError:
-                print "Validation error"
+                print("Validation error")
         else:
-            print "Error w/ Sentiment Analysis request."
-            print response.code
-            print response.body
+            print("Error w/ Sentiment Analysis request.")
+            print(response.status_code)
+            print(response.content)
 
     def analyzeFacebook(self, saveOnFinish=False):
         """
@@ -142,42 +173,21 @@ class Article(db.DynamicDocument):
         Assumes the Article is unique in the database
         :return:
         """
-        print "Analyzing facebook for " + self.title
-        unirest.timeout(5)
-        # Could also send a list of urls off to process all at once
+        print("Analyzing facebook for " + self.title)
         try:
-            response = unirest.get(
-                'http://api.facebook.com/restserver.php?method=links.getStats&format=json&urls=' + str(self.url)
-            )
-        except URLError as ex:
-            print 'Failed to analyze facebook for ' + self.title
-            print 'URLError: ' + str(ex)
-            print 'Articles url: ' + self.url
-            return
+            graph = facebook.GraphAPI(access_token='333900273640148|2PBC4LMBuWk4jDNyrP5a5JIRH-A', version='2.7')
+            data = graph.get_object(id=self.url)
 
-        if response.code == 200:
-            # The meat of the response
-            data = response.body[0]
+            # Graph API deprecated :(
+            fbStats = FacebookStats(data=data)
+            fbStats.validate()
+            self.fbStats.append(fbStats)
+            self.fbIsAnalyzed = True
 
-            fbStats = FacebookStats(
-                likeCount=int(data['like_count']),
-                commentCount=int(data['comment_count']),
-                clickCount=int(data['click_count']),
-                shareCount=int(data['share_count']),
-                totalCount=int(data['total_count'])
-            )
-
-            try:
-                fbStats.validate()
-                self.fbStats.append(fbStats)
-                self.fbIsAnalyzed = True
-
-                if saveOnFinish:
-                    self.save()
-            except db.ValidationError:
-                print "Validation error"
-
-        else:
-            print "Error w/ Facebook Link Analysis request."
-            print response.code
-            print response.body
+            if saveOnFinish:
+                self.save()
+        except db.ValidationError:
+            print("Validation error")
+        except facebook.GraphAPIError as ex:
+            print('Graph API Error!')
+            print(ex)
