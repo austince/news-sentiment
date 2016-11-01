@@ -4,7 +4,6 @@
 import requests
 from datetime import datetime
 from ssl import SSLError
-from urllib.error import URLError
 import boto3
 import facebook
 from sentiment_scraper import db
@@ -22,10 +21,7 @@ class ArticleQuerySet(db.QuerySet):
         return self.filter(relatedArticles__size=numLinks)
 
     def get_returnable(self):
-        return self.exclude('rawPage').exclude('visibleTexts').exclude('relatedLinks')
-
-    def get_without_raw(self):
-        return self.exclude('rawPage')
+        return self.exclude('relatedLinks')
 
     def get_before(self, date, sortOrder='-'):
         return self.filter(date__lte=date).order_by(sortOrder+'date')
@@ -63,10 +59,6 @@ class Article(db.DynamicDocument):
     textIsAnalyzed = db.BooleanField(default=False)
     fbIsAnalyzed = db.BooleanField(default=False)
     relatedAnalyzed = db.BooleanField(default=False)
-
-    # @db.queryset_manager
-    # def by_date(doc_cls, queryset):
-    #     return queryset.order_by('-date')
 
     def saveRawPage(self, rawPage):
         s3 = boto3.resource('s3')
@@ -179,7 +171,8 @@ class Article(db.DynamicDocument):
             data = graph.get_object(id=self.url)
 
             # Graph API deprecated :(
-            fbStats = FacebookStats(data=data)
+            fbStats = FacebookStats()
+            fbStats.fromGraphData(data)
             fbStats.validate()
             self.fbStats.append(fbStats)
             self.fbIsAnalyzed = True

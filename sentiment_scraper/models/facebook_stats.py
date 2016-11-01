@@ -12,17 +12,15 @@ class FacebookStats(db.EmbeddedDocument):
     shareCount = db.IntField()
     totalCount = db.IntField()
 
-    def __init__(self, data=None):
-        super().__init__()
-        if data is not None:
-            totalCount = 0
-            if 'engagement' in data['og_object']:
-                self.likeCount = data['engagement']['count']
-                totalCount += self.likeCount
+    def fromGraphData(self, data):
+        totalCount = 0
+        if 'og_object' in data and 'engagement' in data['og_object']:
+            self.likeCount = data['engagement']['count']
+            totalCount += self.likeCount
 
-            if 'share' in data:
-                self.commentCount = data['share']['comment_count']
-                self.shareCount = data['share']['share_count']
-                totalCount += self.commentCount + self.shareCount
+        if 'share' in data:
+            self.commentCount = data['share']['comment_count']
+            self.shareCount = data['share']['share_count']
+            totalCount += self.commentCount + self.shareCount
 
-            self.totalCount = totalCount
+        self.totalCount = totalCount
