@@ -1,11 +1,8 @@
 """
 
 """
-import requests
 from datetime import datetime
-from ssl import SSLError
 import boto3
-import facebook
 from sentiment_scraper import db
 from sentiment_scraper.models.facebook_stats import FacebookStats
 from sentiment_scraper.models.text_analysis import TextAnalysis
@@ -61,6 +58,11 @@ class Article(db.DynamicDocument):
     relatedAnalyzed = db.BooleanField(default=False)
 
     def saveRawPage(self, rawPage):
+        """
+        Saves to s3 storage
+        :param rawPage:
+        :return:
+        """
         s3 = boto3.resource('s3')
         bucket = s3.Bucket(ARTICLE_BUCKET_NAME)
         bucket.put_object(
@@ -69,14 +71,24 @@ class Article(db.DynamicDocument):
         )
 
     def getArticleText(self):
+        """
+        Get's the text content from S3 storage
+        :return:
+        """
         s3 = boto3.resource('s3')
         fileObj = s3.Object(ARTICLE_BUCKET_NAME, ARTICLE_TEXTS_PREFIX + str(self.id))
         fileReq = fileObj.get()
         return fileReq['Body'].read()
 
     def saveArticleText(self, articleTexts):
+        """
+        Saves to S3 storage
+        :param articleTexts: list of strings
+        :return:
+        """
         s3 = boto3.resource('s3')
         bucket = s3.Bucket(ARTICLE_BUCKET_NAME)
+        # Join the article text with a delimiter so we can parse it later if need be
         bucket.put_object(
             Body=str(TEXT_SEPARATOR.join(articleTexts)),
             Key=str(ARTICLE_TEXTS_PREFIX + str(self.id))
@@ -102,62 +114,17 @@ class Article(db.DynamicDocument):
             # Get a copy from s3
             text = self.getArticleText()
 
-        # Only use the first 10,000 chars limit for now
-        # Will aggregate later
-        if len(text) > 10000:
-            text = text[:10000]
-
+        analysis = TextAnalysis.fromText(text)
         try:
-            response = requests.post(
-                "https://sentinelprojects-skyttle20.p.mashape.com/",
-                headers={
-                    "X-Mashape-Key": "aT640lneftmshsi5erOiJq4hxgQIp1Tdrimjsn4NpRuAEJcPzy",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Accept": "application/json"
-                },
-                data={
-                    "annotate": 1,
-                    "keywords": 1,
-                    "lang": "en",
-                    "sentiment": 1,
-                    "text": text
-                },
-                timeout=5
-            )
-        except SSLError as ex:
-            print(str(ex))
-            # Must break out if we cannot get a response :(
-            return
-
-        # Break into terms and sentiment
-        if response.ok:
-            data = response.json()
-            warnings = data['warnings']
-            # The meat of the response
-            sentimentData = data['docs'][0]
-            for term in sentimentData['terms']:
-                del term['id']  # No one wants yo id CT
-
-            analysis = TextAnalysis(
-                pos=float(sentimentData['sentiment_scores']['pos']),
-                neutral=float(sentimentData['sentiment_scores']['neu']),
-                neg=float(sentimentData['sentiment_scores']['neg']),
-                terms=sentimentData['terms'],
-                warnings=warnings
-            )
-            try:
+            if analysis is not None:
                 analysis.validate()
                 self.textAnalysis = analysis
                 self.textIsAnalyzed = True
 
-                if saveOnFinish:
-                    self.save()
-            except db.ValidationError:
-                print("Validation error")
-        else:
-            print("Error w/ Sentiment Analysis request.")
-            print(response.status_code)
-            print(response.content)
+            if saveOnFinish:
+                self.save()
+        except db.ValidationError:
+            print("Validation error")
 
     def analyzeFacebook(self, saveOnFinish=False):
         """
@@ -166,21 +133,15 @@ class Article(db.DynamicDocument):
         :return:
         """
         print("Analyzing facebook for " + self.title)
+        fbStats = FacebookStats.fromUrl(self.url)
         try:
-            graph = facebook.GraphAPI(access_token='333900273640148|2PBC4LMBuWk4jDNyrP5a5JIRH-A', version='2.7')
-            data = graph.get_object(id=self.url)
-
-            # Graph API deprecated :(
-            fbStats = FacebookStats()
-            fbStats.fromGraphData(data)
-            fbStats.validate()
-            self.fbStats.append(fbStats)
-            self.fbIsAnalyzed = True
+            if fbStats is not None:
+                fbStats.validate()
+                self.fbStats.append(fbStats)
+                self.fbIsAnalyzed = True
 
             if saveOnFinish:
                 self.save()
         except db.ValidationError:
             print("Validation error")
-        except facebook.GraphAPIError as ex:
-            print('Graph API Error!')
-            print(ex)
+

@@ -6,10 +6,10 @@ import time
 import mongoengine as db
 from pymongo import errors
 from sentiment_scraper.models.article import Article
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from sentiment_scraper.utils import articleMatcher
-from sentiment_scraper.utils import articleScraper
+from sentiment_scraper.utils import article_matcher
+from sentiment_scraper.utils import article_scraper
 
 
 def updateMatches(articles, analyzeAll=False):
@@ -22,7 +22,7 @@ def updateMatches(articles, analyzeAll=False):
     for article in articles:
         if analyzeAll or not article.relatedAnalyzed:
             # Only update if the article hasn't been processed so far, or if we want to overrided that
-            articleMatcher.findMatches(article)
+            article_matcher.findMatches(article)
             article.save()
         else:
             # print("Already processed!")
@@ -57,7 +57,7 @@ def run(sleepTime=None):
     print("Time to update articles: " + str(datetime.utcnow() - startTime))
 
     googleNewsScrapeStartTime = datetime.utcnow()
-    articles = articleScraper.scrapeGoogleNews('us')
+    articles = article_scraper.scrapeGoogleNews('us')
     print("Time to scrape Google us news: " + str(datetime.utcnow() - googleNewsScrapeStartTime))
 
     print("Total new article crawl time: " + str(datetime.utcnow() - googleNewsScrapeStartTime))

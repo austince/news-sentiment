@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from ssl import SSLError
 from sentiment_scraper import db
 from sentiment_scraper.models.article import Article
-from sentiment_scraper.utils.articleMatcher import findMatches
+from sentiment_scraper.utils.article_matcher import findMatches
 
 
 def isArticleText(element):
