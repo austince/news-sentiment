@@ -16,39 +16,52 @@ class FacebookStats(db.EmbeddedDocument):
     shareCount = db.IntField(default=0)
     totalCount = db.IntField(default=0)
 
-    def fromGraphData(self, data):
-        if 'og_object' in data and 'engagement' in data['og_object']:
-            self.likeCount = data['og_object']['engagement']['count']
-            totalCount = self.likeCount # If for some reason share wasn't returned
+    @staticmethod
+    def from_graph_data(data):
+        """
 
+        :param data: Facebook GraphObject
+        :return: FacebookStats
+        """
+        stats = FacebookStats()
+        total_count = 0
+
+        if 'og_object' in data and 'engagement' in data['og_object']:
+            stats.likeCount = data['og_object']['engagement']['count']
+            total_count = stats.likeCount  # If for some reason share wasn't returned
+        # Should always be true
         if 'share' in data:
-            self.commentCount = data['share']['comment_count']
+            stats.commentCount = data['share']['comment_count']
             # The share count is an approx aggregation of comments + likes + shares, misleadingly so.
-            # shareCount == totalCount
-            totalCount = data['share']['share_count']
-            self.shareCount += (totalCount - self.commentCount - self.likeCount)
+            # shareCount == total_count
+            total_count = data['share']['share_count']
+            stats.shareCount += (total_count - stats.commentCount - stats.likeCount)
 
             # Not a fan of  this graph API vs the old REST one. Less accurate.
-            if self.shareCount < 0:
-                self.shareCount = 0
+            if stats.shareCount < 0:
+                stats.shareCount = 0
 
-        self.totalCount = totalCount
+        stats.totalCount = total_count
+        return stats
 
     @staticmethod
-    def fromUrl(url):
+    def from_url(url):
+        """
+
+        :param url: str
+        :return: FacebookStats
+        """
         # Old Rest API deprecated :(
         try:
             graph = facebook.GraphAPI(access_token=FB_ACCESS_TOKEN, version='2.7')
-            data = graph.get_object(id=url, fields=\
-                'id,'
-                'share,'    # Ask for share object
-                'og_object{engagement{count}}'   # Specifically as for like count
-            )
+            data = graph.get_object(id=url, fields=
+                                    'id,'
+                                    'share,'    # Ask for share object
+                                    'og_object{engagement{count}}'   # Specifically as for like count
+                                    )
         except facebook.GraphAPIError as ex:
             print('Graph API Error!')
             print(ex)
             return None
 
-        stats = FacebookStats()
-        stats.fromGraphData(data)
-        return stats
+        return FacebookStats.from_graph_data(data)

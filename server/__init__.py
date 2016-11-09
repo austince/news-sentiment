@@ -3,7 +3,10 @@
 """
 import json
 import os
-from flask import Flask
+from datetime import datetime
+from dateutil import parser as date_parser
+from werkzeug.exceptions import BadRequest
+from flask import Flask, jsonify
 from flask_restful import Api, Resource, reqparse
 from flask_restful.utils import cors
 from flask_mongoengine import MongoEngine
@@ -27,7 +30,6 @@ class ArticleRes(Resource):
 
     """
     parser = reqparse.RequestParser()
-    parser.add_argument('start', type=int)
     parser.add_argument('maxReturn', type=int)
     parser.add_argument('startDate', type=str)
     parser.add_argument('endDate', type=str)
@@ -37,54 +39,59 @@ class ArticleRes(Resource):
     def get(self):
         """"""
         args = self.parser.parse_args()
-        start = 0
-        if args.start is not None and args.start >= 0:
-            start = args.start
 
-        # default return is 50
-        maxReturn = 100
+        # default return is 100
+        max_return = 100
         if args.maxReturn is not None:
-            maxReturn = args.maxReturn
+            max_return = args.maxReturn
 
-        sortOrder = '-'  # Defaults to descending
+        sort_order = '-'  # Defaults to descending
         if args.sortOrder is not None:
             if args.sortOrder == "ascending":
-                sortOrder = "+"
+                sort_order = "+"
             # Else descending
 
-        orderBy = 'date'
+        order_by = 'date'
         if args.orderBy is not None:
-            orderBy = args.orderBy
+            order_by = args.orderBy
+
+        try:
+            start_date = date_parser.parse(args.startDate) if args.startDate is not None else None
+            end_date = date_parser.parse(args.endDate) if args.endDate is not None else None
+        except TypeError as ex:
+            raise BadRequest(description="Date error: " + str(ex))
 
         # Start query / filtering
-        articles = Article.objects.get_returnable()
+        articles = Article.objects.get_returnable().limit(max_return)
 
-        if args.startDate is not None:
-            pass
+        if start_date is not None or end_date is not None:
+            articles = articles.get_between(start_date, end_date)
 
-        if args.endDate is not None:
-            pass
-
-        if orderBy == 'date':
-            articles = articles.get_returnable().order_by(sortOrder + 'date')
+        if order_by == 'date':
+            articles = articles.order_by(sort_order + 'date')
         else:
             articles = articles
 
+        # Thinking about adding the links into the returned set
         # articles = articles.get_returnable().get_linked()
 
-        articleCount = len(articles)
+        article_count = len(articles)
 
-        toReturn = {
-            'count': articleCount,
+        to_return = {
+            'count': article_count,
             'start': start,
-            'numReturned': maxReturn,
-            'result': articles[start:start+maxReturn].to_json()
+            'result': articles[start:start+max_return].to_json()
         }
 
-        return json.dumps(toReturn), 200
+        return json.dumps(to_return), 200
 
 
 api.add_resource(ArticleRes, '/articles')
 
-if __name__ == "__main__":
-    app.run()
+
+@app.errorhandler(BadRequest)
+def handle_error(error):
+    print("ERROR")
+    response = jsonify(error)
+    response.status_code = error.status_code
+    return response

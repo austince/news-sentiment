@@ -8,6 +8,7 @@ from sentiment_scraper import db
 
 MASHAPE_KEY = os.environ.get('MASHAPE_KEY', '')
 
+
 class TextAnalysis(db.EmbeddedDocument):
     neg = db.FloatField()
     neutral = db.FloatField()
@@ -15,9 +16,8 @@ class TextAnalysis(db.EmbeddedDocument):
     terms = db.ListField(db.DictField())
     warnings = db.ListField(db.StringField())
 
-
     @staticmethod
-    def fromText(text):
+    def from_text(text):
         analysis = None
 
         # Only use the first 10,000 chars limit for now
@@ -52,15 +52,15 @@ class TextAnalysis(db.EmbeddedDocument):
             data = response.json()
             warnings = data['warnings']
             # The meat of the response
-            sentimentData = data['docs'][0]
-            for term in sentimentData['terms']:
+            sentiment_data = data['docs'][0]
+            for term in sentiment_data['terms']:
                 del term['id']  # No one wants yo id CT
 
             analysis = TextAnalysis(
-                pos=float(sentimentData['sentiment_scores']['pos']),
-                neutral=float(sentimentData['sentiment_scores']['neu']),
-                neg=float(sentimentData['sentiment_scores']['neg']),
-                terms=sentimentData['terms'],
+                pos=float(sentiment_data['sentiment_scores']['pos']),
+                neutral=float(sentiment_data['sentiment_scores']['neu']),
+                neg=float(sentiment_data['sentiment_scores']['neg']),
+                terms=sentiment_data['terms'],
                 warnings=warnings
             )
 
@@ -68,6 +68,5 @@ class TextAnalysis(db.EmbeddedDocument):
             print("Error w/ Sentiment Analysis request.")
             print(response.status_code)
             print(response.content)
-            return None
 
         return analysis

@@ -5,10 +5,10 @@ from datetime import datetime, timedelta
 from ssl import SSLError
 from sentiment_scraper import db
 from sentiment_scraper.models.article import Article
-from sentiment_scraper.utils.article_matcher import findMatches
+from sentiment_scraper.utils.article_matcher import find_matches
 
 
-def isArticleText(element):
+def is_article_text(element):
     """
     Found @
     http://stackoverflow.com/questions/1936466/beautifulsoup-grab-visible-webpage-text
@@ -30,69 +30,69 @@ def isArticleText(element):
     return True
 
 
-def scrapeGoogleArticle(articleSoup, edition):
-    relatedLinkSoup = articleSoup.findAll('a', attrs={'class': 'esc-topic-link'})
-    relatedLinks = []
-    for link in relatedLinkSoup:
+def scrape_google_article(article_soup, edition):
+    related_link_soup = article_soup.findAll('a', attrs={'class': 'esc-topic-link'})
+    related_links = []
+    for link in related_link_soup:
         # Can't figure out why I keep scraping 2 copies of every related link
-        formattedLink = 'http://news.google.com' + link['href']
-        if formattedLink not in relatedLinks:
-            relatedLinks.append('http://news.google.com' + link['href'])
+        formatted_link = 'http://news.google.com' + link['href']
+        if formatted_link not in related_links:
+            related_links.append('http://news.google.com' + link['href'])
 
-    articleUrl = articleSoup.find('a', attrs={'class': 'article'})['href']
+    article_url = article_soup.find('a', attrs={'class': 'article'})['href']
 
     # Try to strip out just the name root source
-    sourceSite = re.search('http://(.+?)\.(.+?)/(.+?)', articleUrl)
-    if sourceSite:
-        sourceSite = sourceSite.group(2)
+    source_site = re.search('http://(.+?)\.(.+?)/(.+?)', article_url)
+    if source_site:
+        source_site = source_site.group(2)
 
-    articleTitle = articleSoup.find('span', 'titletext').text
+    article_title = article_soup.find('span', 'titletext').text
 
     # Try to strip out the date
-    dateText = articleSoup.find('span', 'al-attribution-timestamp').text
-    minsAgo = int(re.search(r'\d+', dateText).group())
-    if dateText.lower().find('hour') != -1:
-        minsAgo *= 60
+    date_text = article_soup.find('span', 'al-attribution-timestamp').text
+    mins_ago = int(re.search(r'\d+', date_text).group())
+    if date_text.lower().find('hour') != -1:
+        mins_ago *= 60
 
-    articleDate = datetime.utcnow() - timedelta(minutes=minsAgo)
+    article_date = datetime.utcnow() - timedelta(minutes=mins_ago)
 
     try:
-        articleSourceResponse = requests.get(articleUrl)
-        if articleSourceResponse.status_code == 303:
+        article_source_response = requests.get(article_url)
+        if article_source_response.status_code == 303:
             # NY times really not playing nice with scraping
             # Could use the selenium headless browser to get around this. Humph.
-            articleSourceResponse = requests.get(articleSourceResponse.headers.dict['location'])
+            article_source_response = requests.get(article_source_response.headers.dict['location'])
             print("Ugh @ NYTimes redirect")
-        articleSource = articleSourceResponse.text
+        article_source = article_source_response.text
 
         # Now we have to filter out all html on the page and just try to grab the visible text
         # Note: This is not as good as scraping just the article, but I do not have the time
         # to write a scraper for each website
 
-        texts = BeautifulSoup(articleSource, 'html.parser').findAll(text=True)
-        visibleTextList = list(filter(isArticleText, texts))
+        texts = BeautifulSoup(article_source, 'html.parser').findAll(text=True)
+        visible_text_list = list(filter(is_article_text, texts))
 
         article = Article(
-            date=articleDate,
-            title=articleTitle,
-            site=sourceSite,
-            url=articleUrl,
-            relatedLinks=relatedLinks,
+            date=article_date,
+            title=article_title,
+            site=source_site,
+            url=article_url,
+            relatedLinks=related_links,
             newsEdition=edition
         )
         article.validate()
-        findMatches(article)
+        find_matches(article)
         # Try to save it before analyzing in case of a duplicate error
         article.save()
-        article.saveArticleText(visibleTextList)
-        article.saveRawPage(articleSource)
+        article.save_article_text(visible_text_list)
+        article.save_raw_page(article_source)
 
         # Analyze!
         # Add a single space to buffer each text
         # Create one long string of all the visible text on the page for processing
-        visibleTextStr = ' '.join(list(visibleTextList))
-        article.analyzeSentiment(text=visibleTextStr)
-        article.analyzeFacebook()
+        visible_text_str = ' '.join(list(visible_text_list))
+        article.analyze_sentiment(text=visible_text_str)
+        article.analyze_facebook()
         article.save()
 
         return article
@@ -102,26 +102,28 @@ def scrapeGoogleArticle(articleSoup, edition):
         return None
 
 
-def scrapeGoogleNews(edition):
+def scrape_google_news(edition):
     """
-
+    TODO: Should probably use the RSS feed instead of scraping HTML
+    Wouldn't have to deal with ads
+    Would have a measure for rate limiting
     :return: list of models.Article.Article
     """
     articles = []
     url = 'https://news.google.com/news/section?cf=all&pz=1&topic=n'
     source = requests.get(url)
     soup = BeautifulSoup(source.text, 'html.parser')
-    articleListSoup = soup.findAll('div', attrs={'class': 'blended-wrapper'})
+    article_list_soup = soup.findAll('div', attrs={'class': 'blended-wrapper'})
 
     print("Scraping Google News: " + edition)
-    print(str(len(articleListSoup)) + " articles to scrape.")
-    articleCount = 1
+    print(str(len(article_list_soup)) + " articles to scrape.")
+    article_count = 1
 
-    for articleSoup in articleListSoup:
-        print("Scraping article #" + str(articleCount))
-        articleCount += 1
+    for articleSoup in article_list_soup:
+        print("Scraping article #" + str(article_count))
+        article_count += 1
 
-        article = scrapeGoogleArticle(articleSoup, edition)
+        article = scrape_google_article(articleSoup, edition)
 
         if article is not None:
             articles.append(article)

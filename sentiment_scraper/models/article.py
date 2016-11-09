@@ -1,8 +1,9 @@
 """
 
 """
-from datetime import datetime
+from datetime import datetime, MINYEAR
 import boto3
+from botocore.exceptions import ClientError
 from sentiment_scraper import db
 from sentiment_scraper.models.facebook_stats import FacebookStats
 from sentiment_scraper.models.text_analysis import TextAnalysis
@@ -14,20 +15,24 @@ TEXT_SEPARATOR = ' % '
 
 
 class ArticleQuerySet(db.QuerySet):
-    def get_linked(self, numLinks=1):
-        return self.filter(relatedArticles__size=numLinks)
+    def get_linked(self, num_links=1):
+        return self.filter(slice__relatedArticles=num_links)
 
     def get_returnable(self):
         return self.exclude('relatedLinks')
 
-    def get_before(self, date, sortOrder='-'):
-        return self.filter(date__lte=date).order_by(sortOrder+'date')
+    def get_between(self, start_date=datetime.min, end_date=datetime.max):
+        if start_date is None:
+            start_date = datetime.min
+        if end_date is None:
+            end_date = datetime.max
+        return self.filter(date__gte=start_date, date__lte=end_date)
 
-    def get_after(self, date, sortOrder='-'):
-        return self.filter(date__gte=date).order_by(sortOrder+'date')
+    def get_before(self, date):
+        return self.filter(date__lte=date)
 
-    def get_positive(self, orderBy='date', sortOrder='-'):
-        return self.filter(fbIsAnalyzed=True).order_by(sortOrder + orderBy)
+    def get_after(self, date):
+        return self.filter(date__gte=date)
 
 
 class Article(db.DynamicDocument):
@@ -57,40 +62,40 @@ class Article(db.DynamicDocument):
     fbIsAnalyzed = db.BooleanField(default=False)
     relatedAnalyzed = db.BooleanField(default=False)
 
-    def saveRawPage(self, rawPage):
+    def save_raw_page(self, raw_page):
         """
         Saves to s3 storage
-        :param rawPage:
+        :param raw_page:
         :return:
         """
         s3 = boto3.resource('s3')
         bucket = s3.Bucket(ARTICLE_BUCKET_NAME)
         bucket.put_object(
-            Body=str(rawPage),
+            Body=str(raw_page),
             Key=str(ARTICLE_RAW_PREFIX + str(self.id))
         )
 
-    def getArticleText(self):
+    def get_article_text(self):
         """
         Get's the text content from S3 storage
         :return:
         """
         s3 = boto3.resource('s3')
-        fileObj = s3.Object(ARTICLE_BUCKET_NAME, ARTICLE_TEXTS_PREFIX + str(self.id))
-        fileReq = fileObj.get()
-        return fileReq['Body'].read()
+        file_obj = s3.Object(ARTICLE_BUCKET_NAME, ARTICLE_TEXTS_PREFIX + str(self.id))
+        file_req = file_obj.get()
+        return file_req['Body'].read()
 
-    def saveArticleText(self, articleTexts):
+    def save_article_text(self, article_texts):
         """
         Saves to S3 storage
-        :param articleTexts: list of strings
+        :param article_texts: list of strings
         :return:
         """
         s3 = boto3.resource('s3')
         bucket = s3.Bucket(ARTICLE_BUCKET_NAME)
         # Join the article text with a delimiter so we can parse it later if need be
         bucket.put_object(
-            Body=str(TEXT_SEPARATOR.join(articleTexts)),
+            Body=str(TEXT_SEPARATOR.join(article_texts)),
             Key=str(ARTICLE_TEXTS_PREFIX + str(self.id))
         )
 
@@ -100,48 +105,60 @@ class Article(db.DynamicDocument):
         articles.sort(key=lambda x: x.date)
         return articles
 
-    def analyzeSentiment(self, text=None, saveOnFinish=False):
+    def analyze_sentiment(self, text=None, save_on_finish=False):
         """
         -- Uses https://market.mashape.com/japerk/text-processing for sentiment.
             45000 / mo --
         Uses https://market.mashape.com/sentinelprojects/skyttle2-0 for tags.
             500 / day LIMIT
+        :param text: str | [None]
+        :param save_on_finish: bool | [False]
         :return:
         """
-        print("Analyzing sentiment for " + self.title)
+        print("Analyzing sentiment for " + str(self.title))
         # Buffer each text with a space
-        if text is None:
-            # Get a copy from s3
-            text = self.getArticleText()
-
-        analysis = TextAnalysis.fromText(text)
         try:
+            if text is None:
+                # Get a copy from s3
+                text = self.get_article_text()
+
+            analysis = TextAnalysis.from_text(text)
+
             if analysis is not None:
                 analysis.validate()
                 self.textAnalysis = analysis
                 self.textIsAnalyzed = True
 
-            if saveOnFinish:
+            if save_on_finish:
                 self.save()
         except db.ValidationError:
             print("Validation error")
+        except ClientError as ex:
+            if ex.response['Error']['Code'] == 'NoSuchKey':
+                # If this was improperly stored, delete it from the database
+                # Could rescrape, but don't want to get here in the first place
+                print("Can't find the texts for: " + str(self.title))
+                print("Key: " + ex.response['Error']['Key'])
+                self.delete()
+            else:
+                print(ex)
 
-    def analyzeFacebook(self, saveOnFinish=False):
+    def analyze_facebook(self, save_on_finish=False):
         """
         Uses http://api.facebook.com/restserver.php?method=links.getStats&format=json&urls={articleUrl}
         Assumes the Article is unique in the database
+        :param save_on_finish: bool | [False]
         :return:
         """
-        print("Analyzing facebook for " + self.title)
-        fbStats = FacebookStats.fromUrl(self.url)
+        print("Analyzing facebook for " + str(self.title))
+        fb_stat = FacebookStats.from_url(self.url)
         try:
-            if fbStats is not None:
-                fbStats.validate()
-                self.fbStats.append(fbStats)
+            if fb_stat is not None:
+                fb_stat.validate()
+                self.fbStats.append(fb_stat)
                 self.fbIsAnalyzed = True
 
-            if saveOnFinish:
+            if save_on_finish:
                 self.save()
         except db.ValidationError:
             print("Validation error")
-
