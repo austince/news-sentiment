@@ -1,7 +1,7 @@
 """
 
 """
-from datetime import datetime, MINYEAR
+from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 from sentiment_scraper import db
@@ -15,6 +15,9 @@ TEXT_SEPARATOR = ' % '
 
 
 class ArticleQuerySet(db.QuerySet):
+    """
+
+    """
     def get_linked(self, num_links=1):
         return self.filter(slice__relatedArticles=num_links)
 
@@ -40,6 +43,8 @@ class Article(db.DynamicDocument):
         'queryset_class': ArticleQuerySet,
         'indexes': [
             'title',
+            'site',
+            'newsEdition',
             '#date'
         ]
     }
