@@ -24,7 +24,19 @@ db = MongoEngine(app)
 api.decorators = [cors.crossdomain(origin='*', headers=['Content-Type'])]
 
 
-class ArticleRes(Resource):
+class SingleArticleRes(Resource):
+    """
+
+    """
+    def get(self, id):
+        response = {}
+        article = Article.objects.get(id=id)
+        article.load_text()
+        response['result'] = article.to_json()
+        return json.dumps(response), 200
+
+
+class AllArticlesRes(Resource):
     """
 
     """
@@ -85,7 +97,8 @@ class ArticleRes(Resource):
         return json.dumps(response), 200
 
 
-api.add_resource(ArticleRes, '/articles')
+api.add_resource(AllArticlesRes, '/articles')
+api.add_resource(SingleArticleRes, '/articles/<string:id>')
 
 
 @app.errorhandler(BadRequest)

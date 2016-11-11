@@ -58,7 +58,7 @@ class Article(db.DynamicDocument):
     newsEdition = db.StringField()
     # These have been deprecated because they bloat the database
     # Should be moved into a static storage service (s^3???)
-    # visibleTexts = db.ListField(db.StringField())
+    # articleText = db.ListField(db.StringField())
     # rawPage = db.StringField()
 
     textAnalysis = db.EmbeddedDocumentField(TextAnalysis, default=None)
@@ -80,6 +80,9 @@ class Article(db.DynamicDocument):
             Key=str(ARTICLE_RAW_PREFIX + str(self.id))
         )
 
+    def load_text(self):
+        self.articleText = self.get_article_text()
+
     def get_article_text(self):
         """
         Get's the text content from S3 storage
@@ -88,7 +91,7 @@ class Article(db.DynamicDocument):
         s3 = boto3.resource('s3')
         file_obj = s3.Object(ARTICLE_BUCKET_NAME, ARTICLE_TEXTS_PREFIX + str(self.id))
         file_req = file_obj.get()
-        return file_req['Body'].read()
+        return file_req['Body'].read().decode("utf-8")
 
     def save_article_text(self, article_texts):
         """
