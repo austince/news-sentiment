@@ -57,10 +57,12 @@ def update():
 
 
 def scrape():
+    editions = ['us', 'uk']
     start_time = datetime.utcnow()
-    articles = article_scraper.scrape_google_news('us')
-    print("Scrapped: " + str(len(articles)) + " articles from US Google News")
-    print("Time to scrape Google us news: " + str(datetime.utcnow() - start_time))
+    for edition in editions:
+        articles = article_scraper.scrape_google_news(edition)
+        print("Scrapped: " + str(len(articles)) + " articles from " + edition + " Google News")
+        print("Time to scrape Google " + edition + " news: " + str(datetime.utcnow() - start_time))
 
     print("Total new article crawl time: " + str(datetime.utcnow() - start_time))
 

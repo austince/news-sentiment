@@ -110,7 +110,7 @@ def scrape_google_news(edition):
     :return: list of models.Article.Article
     """
     articles = []
-    url = 'https://news.google.com/news/section?cf=all&pz=1&topic=n'
+    url = 'https://news.google.com/news/section?cf=all&pz=1&topic=n&ned=' + edition
     source = requests.get(url)
     soup = BeautifulSoup(source.text, 'html.parser')
     article_list_soup = soup.findAll('div', attrs={'class': 'blended-wrapper'})

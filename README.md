@@ -32,11 +32,14 @@ mashape-key.private.sh
 ...
 ```
 
+To install and load:
+```bash
+source ./install.sh
+```
+
 ### Run.py
-First run install.sh to install dependencies and load env variables.
-Then:
+Running options:
 ```bash
 python run.py --help
 ```
 
-Will give you running options.

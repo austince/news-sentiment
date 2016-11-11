@@ -82,7 +82,7 @@ if __name__ == "__main__":
 
     parser.add_argument('-e', '--env', type=str,
                         default='development',
-                        help="specify the environment to run the server in. "
+                        help="specify the environment to run the server in.\n"
                              "'prod' or 'production' will load more secure settings.")
 
     parser.add_argument('--server', action='store_true',
@@ -93,13 +93,11 @@ if __name__ == "__main__":
 
     parser.add_argument('-m', '--mode', type=str,
                         default='both',
-                        help="specify the mode to run the scraper in. "
-                             "'scrape' to only run scraper for new articles"
-                             "'update' to only update the existing articles"
-                             "'both' to run both. Default.")
-
-    parser.add_argument('-uo', '--update-only', action='store_true',
-                        help="specify to only update the articles.")
+                        help="specify the mode to run the scraper in.\n"
+                             "'scrape' to only run scraper for new articles\n"
+                             "'update' to only update the existing articles\n"
+                             "'both' to run both.\n"
+                             "Default is 'both'")
 
     args = parser.parse_args()
 

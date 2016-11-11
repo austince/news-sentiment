@@ -35,11 +35,12 @@ def find_matches(article, is_saved=False):
                     # should we then scrape this article and then add it to the database?
                     continue
 
-                if related_article not in article.relatedArticles:
+                if related_article not in article.relatedArticles and article not in related_article.relatedArticles:
                     print("Found a new related article: " + related_article_title + " for " + article.title)
                     if is_saved:
                         # The preferred method but can only be used on a saved doc
                         article.update(push__relatedArticles=related_article)
+                        related_article.update(push__relatedArticles=article)
                     else:
                         article.relatedArticles.append(related_article)
 
