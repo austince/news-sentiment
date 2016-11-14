@@ -58,11 +58,11 @@ def exit_sig_handler(signal, frame):
     if server_process is not None:
         print("Stopping the server.")
         # server_process.terminate()
-        # server_process.join()
+        server_process.join(60)
     if scraper_process is not None:
         print("Stopping the scraper.")
         # scraper_process.terminate()
-        # scraper_process.join()
+        scraper_process.join(60)
 
     sys.exit(0)
 
@@ -78,7 +78,8 @@ if __name__ == "__main__":
 
     parser.add_argument('-t', '--time', type=int,
                         default=3600,
-                        help="specify the number of seconds between scrapings.")
+                        help="specify the number of seconds between scrapings.\n"
+                             "Negative numbers for ")
 
     parser.add_argument('-e', '--env', type=str,
                         default='development',

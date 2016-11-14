@@ -59,22 +59,25 @@ def update():
 def scrape():
     editions = ['us', 'uk']
     start_time = datetime.utcnow()
+    articles_scraped = 0
     for edition in editions:
+        edition_start_time = datetime.utcnow()
         articles = article_scraper.scrape_google_news(edition)
+        articles_scraped += len(articles)
         print("Scrapped: " + str(len(articles)) + " articles from " + edition + " Google News")
-        print("Time to scrape Google " + edition + " news: " + str(datetime.utcnow() - start_time))
+        print("Time to scrape Google " + edition + " news: " + str(datetime.utcnow() - edition_start_time))
 
+    print("Scrapped " + str(articles_scraped) + " total.")
     print("Total new article crawl time: " + str(datetime.utcnow() - start_time))
 
 
 def run(sleep_time=None, mode='both'):
-    while True:
-        start_time = datetime.utcnow()
-        try:
-            db.connect('newsSentiment')
-        except errors.ConnectionFailure:
-            print("Connection failure")
+    try:
+        db.connect('newsSentiment')
+    except errors.ConnectionFailure:
+        print("Connection failure")
 
+    while True:
         update_thread = None
         scrape_thread = None
 
@@ -87,17 +90,13 @@ def run(sleep_time=None, mode='both'):
             scrape_thread = threading.Thread(target=scrape)
             scrape_thread.start()
 
-        # Wait at most 60 seconds for the threads to end
         if update_thread is not None:
-            update_thread.join(60)
+            update_thread.join()
         if scrape_thread is not None:
-            scrape_thread.join(60)
+            scrape_thread.join()
 
-        print("\n Total time: " + str(datetime.utcnow() - start_time))
-
-        print("All done for now!")
-
-        if sleep_time is not None:
-            time.sleep(sleep_time)
-        else:
+        if sleep_time is None or sleep_time < 0:
+            print("All done for now!")
             break
+        else:
+            time.sleep(sleep_time)
