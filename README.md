@@ -1,4 +1,9 @@
-# news-sentiment  
+# News Sentiment 
+
+<p align="center">
+    <img src="https://i.imgur.com/oOrLKCx.png"/>
+</p>
+
 
 A Google News scraper and slim server to analyze the sentiment of our news.  
 For HST 325, Visualizing Society.  
